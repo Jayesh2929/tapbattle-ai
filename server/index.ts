@@ -87,32 +87,32 @@ app.prepare().then(() => {
     });
 
     socket.on("session:join", async ({ code, name }) => {
-  const room = rooms.get(code);
-  if (!room) {
-    socket.emit("activity:log", `No session found for code ${code}`);
-    return;
-  }
-  currentCode = code;
+      const room = rooms.get(code);
+      if (!room) {
+        socket.emit("activity:log", `No session found for code ${code}`);
+        return;
+      }
+      currentCode = code;
 
-  // Idempotency guard: if this socket already has a player registered
-  // in this room (e.g. the join page joined, then the game screen
-  // joined again on mount, or the tab was refreshed), just resend the
-  // existing player's state instead of creating a duplicate.
-  const existingPlayerId = socket.data.playerId as string | undefined;
-  if (existingPlayerId && room.players.has(existingPlayerId)) {
-    socket.join(code);
-    socket.emit("session:update", room.session);
-    socket.emit("player:self", room.players.get(existingPlayerId)!);
-    return;
-  }
+      // Idempotency guard: if this socket already has a player registered
+      // in this room (e.g. the join page joined, then the game screen
+      // joined again on mount, or the tab was refreshed), just resend the
+      // existing player's state instead of creating a duplicate.
+      const existingPlayerId = socket.data.playerId as string | undefined;
+      if (existingPlayerId && room.players.has(existingPlayerId)) {
+        socket.join(code);
+        socket.emit("session:update", room.session);
+        socket.emit("player:self", room.players.get(existingPlayerId)!);
+        return;
+      }
 
-  const player: Player = {
-      id: uuid(),
-      name: name.slice(0, 24) || "Player",
-      joinedAt: Date.now(),
-      connected: true,
-      avatarIndex: room.players.size,
-    };
+      const player: Player = {
+        id: uuid(),
+        name: name.slice(0, 24) || "Player",
+        joinedAt: Date.now(),
+        connected: true,
+        avatarIndex: room.players.size,
+      };
       room.players.set(player.id, player);
       room.taps.set(player.id, []);
       socket.join(code);

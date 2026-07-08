@@ -7,12 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/analytics/StatCard";
 import { SessionsTable, type AdminSessionRow } from "@/components/admin/SessionsTable";
 import { EventLog, type AdminLogRow } from "@/components/admin/EventLog";
+import { PlayersDialog, type AdminPlayerRow } from "@/components/admin/PlayersDialog";
 
 /**
  * In production this page subscribes to a lightweight `admin` Socket.io
- * namespace broadcasting room snapshots from server/index.ts. Here it
- * renders representative live-feeling demo data so the dashboard is fully
- * navigable without a running multi-session server.
+ * namespace broadcasting room snapshots from server/index.ts, and the
+ * player roster below is read from the Player/Tap tables via Prisma. Here
+ * it renders representative demo data so the dashboard -- including the
+ * drill-down dialogs -- is fully navigable without a running multi-session
+ * server.
  */
 const demoSessions: AdminSessionRow[] = [
   { code: "TB7K2Q", host: "Arnav", players: 4, status: "live", startedAgo: "2m ago" },
@@ -20,17 +23,33 @@ const demoSessions: AdminSessionRow[] = [
   { code: "TB2P8L", host: "Aditya", players: 5, status: "results", startedAgo: "14m ago" },
 ];
 
+const demoPlayers: AdminPlayerRow[] = [
+  { name: "Jayesh", sessionCode: "TB7K2Q", avgMs: 238, roundsPlayed: 3, joinedAgo: "2m ago", status: "connected" },
+  { name: "Meera", sessionCode: "TB7K2Q", avgMs: 271, roundsPlayed: 3, joinedAgo: "2m ago", status: "connected" },
+  { name: "Karan", sessionCode: "TB7K2Q", avgMs: 305, roundsPlayed: 2, joinedAgo: "2m ago", status: "connected" },
+  { name: "Diya", sessionCode: "TB7K2Q", avgMs: 260, roundsPlayed: 3, joinedAgo: "2m ago", status: "connected" },
+  { name: "Rohan", sessionCode: "TB9X3M", avgMs: 0, roundsPlayed: 0, joinedAgo: "just now", status: "connected" },
+  { name: "Simran", sessionCode: "TB9X3M", avgMs: 0, roundsPlayed: 0, joinedAgo: "just now", status: "connected" },
+  { name: "Arnav", sessionCode: "TB2P8L", avgMs: 215, roundsPlayed: 5, joinedAgo: "14m ago", status: "disconnected" },
+  { name: "Aditya", sessionCode: "TB2P8L", avgMs: 249, roundsPlayed: 5, joinedAgo: "14m ago", status: "disconnected" },
+  { name: "Rushada", sessionCode: "TB2P8L", avgMs: 233, roundsPlayed: 5, joinedAgo: "14m ago", status: "disconnected" },
+  { name: "Vikram", sessionCode: "TB2P8L", avgMs: 288, roundsPlayed: 5, joinedAgo: "14m ago", status: "disconnected" },
+  { name: "Priya", sessionCode: "TB2P8L", avgMs: 301, roundsPlayed: 4, joinedAgo: "14m ago", status: "disconnected" },
+];
+
 const initialLogs: AdminLogRow[] = [
   { level: "info", message: "Session TB7K2Q started round 3 of 5", time: "14:22:10" },
   { level: "info", message: "Player 'Jayesh' joined TB9X3M", time: "14:21:58" },
   { level: "warn", message: "High latency (312ms) on socket #a91f for session TB2P8L", time: "14:20:41" },
-  { level: "info", message: "Session TB2P8L completed — analytics persisted", time: "14:08:02" },
+  { level: "info", message: "Session TB2P8L completed -- analytics persisted", time: "14:08:02" },
   { level: "error", message: "Prisma write retried for TB2P8L analytics snapshot", time: "14:08:01" },
 ];
 
 export default function AdminDashboardPage() {
   const [latency, setLatency] = useState(48);
-  const [logs, setLogs] = useState(initialLogs);
+  const [logs] = useState(initialLogs);
+  const [playersDialogOpen, setPlayersDialogOpen] = useState(false);
+  const [sessionFilter, setSessionFilter] = useState<string | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -41,6 +60,16 @@ export default function AdminDashboardPage() {
 
   const totalPlayers = demoSessions.reduce((a, s) => a + s.players, 0);
   const liveSessions = demoSessions.filter((s) => s.status === "live").length;
+
+  function openAllPlayers() {
+    setSessionFilter(null);
+    setPlayersDialogOpen(true);
+  }
+
+  function openSessionPlayers(code: string) {
+    setSessionFilter(code);
+    setPlayersDialogOpen(true);
+  }
 
   return (
     <main className="min-h-screen px-6 py-10">
@@ -64,17 +93,40 @@ export default function AdminDashboardPage() {
 
         <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
           <StatCard icon={Zap} label="Active sessions" value={String(demoSessions.length)} sublabel={`${liveSessions} in progress`} />
-          <StatCard icon={Users} label="Connected players" value={String(totalPlayers)} sublabel="Across all sessions" delay={0.05} tone="success" />
-          <StatCard icon={Activity} label="Average latency" value={`${latency}ms`} sublabel="Round-trip socket ping" delay={0.1} tone={latency > 70 ? "warning" : "default"} />
+          <button onClick={openAllPlayers} className="text-left transition-transform hover:-translate-y-0.5">
+            <StatCard
+              icon={Users}
+              label="Connected players"
+              value={String(totalPlayers)}
+              sublabel="Click to view all players"
+              delay={0.05}
+              tone="success"
+            />
+          </button>
+          <StatCard
+            icon={Activity}
+            label="Average latency"
+            value={`${latency}ms`}
+            sublabel="Round-trip socket ping"
+            delay={0.1}
+            tone={latency > 70 ? "warning" : "default"}
+          />
           <StatCard icon={Server} label="Server status" value="Healthy" sublabel="Node + Socket.io + PostgreSQL" delay={0.15} tone="success" />
         </div>
 
         <div className="mb-6">
-          <SessionsTable sessions={demoSessions} />
+          <SessionsTable sessions={demoSessions} onRowClick={openSessionPlayers} />
         </div>
 
         <EventLog logs={logs} />
       </div>
+
+      <PlayersDialog
+        open={playersDialogOpen}
+        onOpenChange={setPlayersDialogOpen}
+        players={demoPlayers}
+        sessionFilter={sessionFilter}
+      />
     </main>
   );
 }

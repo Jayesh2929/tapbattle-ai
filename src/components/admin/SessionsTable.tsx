@@ -18,12 +18,18 @@ const statusTone = {
   results: "blue",
 } as const;
 
-export function SessionsTable({ sessions }: { sessions: AdminSessionRow[] }) {
+export function SessionsTable({
+  sessions,
+  onRowClick,
+}: {
+  sessions: AdminSessionRow[];
+  onRowClick?: (code: string) => void;
+}) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Active sessions</CardTitle>
-        <CardDescription>All TapBattle sessions currently tracked by the server</CardDescription>
+        <CardDescription>Click a session to see its connected players</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -44,7 +50,8 @@ export function SessionsTable({ sessions }: { sessions: AdminSessionRow[] }) {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: i * 0.05 }}
-                  className="border-b border-white/5 last:border-0"
+                  onClick={() => onRowClick?.(s.code)}
+                  className="cursor-pointer border-b border-white/5 transition-colors last:border-0 hover:bg-white/[0.04]"
                 >
                   <td className="py-3 font-mono text-xs">{s.code}</td>
                   <td className="py-3 text-muted-foreground">{s.host}</td>
