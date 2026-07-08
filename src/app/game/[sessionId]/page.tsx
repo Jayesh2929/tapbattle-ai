@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -28,14 +28,26 @@ export default function GameScreenPage() {
   const [winner, setWinner] = useState<LeaderboardEntry | null>(null);
   const [hasTappedThisRound, setHasTappedThisRound] = useState(false);
 
+  // A ref mirrors selfId so event handlers can read the latest value without
+  // needing selfId in the effect's dependency array (which would otherwise
+  // re-run the join on every update and create a new player each time).
+  const selfIdRef = useRef<string | null>(null);
+  const hasJoinedRef = useRef(false);
+
   useEffect(() => {
     const socket = getSocket();
 
-    // Ensure this browser tab is registered in the room (idempotent join if
-    // arriving here directly, e.g. after a refresh).
-    socket.emit("session:join", { code, name });
+    // Only join once per mount — guards against React StrictMode's
+    // double-invoke in development and prevents duplicate players.
+    if (!hasJoinedRef.current) {
+      socket.emit("session:join", { code, name });
+      hasJoinedRef.current = true;
+    }
 
-    const onSelf = (p: Player) => setSelfId(p.id);
+    const onSelf = (p: Player) => {
+      selfIdRef.current = p.id;
+      setSelfId(p.id);
+    };
     const onSession = (s: GameSession) => {
       setStatus(s.status);
       setRound(s.round);
@@ -46,7 +58,7 @@ export default function GameScreenPage() {
     const onCountdown = (s: number) => setCountdown(s);
     const onSignal = () => setCountdown(null);
     const onResult = (r: RoundResult) => {
-      if (r.playerId === selfId) {
+      if (r.playerId === selfIdRef.current) {
         setLastResult({ reactionMs: r.reactionMs, falseStart: r.falseStart });
       }
     };
@@ -70,8 +82,10 @@ export default function GameScreenPage() {
       socket.off("leaderboard:update", onLeaderboard);
       socket.off("game:winner", onWinner);
     };
+    // code/name are read once at mount — the room is fixed by the URL, so
+    // intentionally NOT re-running this effect if they were to change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, name, selfId]);
+  }, []);
 
   function handleTap() {
     if (!selfId || hasTappedThisRound) return;
