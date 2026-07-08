@@ -2,13 +2,19 @@
 
 import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Crown } from "lucide-react";
+import { Crown, X } from "lucide-react";
 import { colorForIndex } from "@/lib/utils";
 import type { LeaderboardEntry } from "@/types";
 
 const confettiColors = ["#8b5cf6", "#3b82f6", "#f472b6", "#34d399", "#fbbf24"];
 
-export function WinnerAnimation({ winner }: { winner: LeaderboardEntry | null }) {
+export function WinnerAnimation({
+  winner,
+  onDismiss,
+}: {
+  winner: LeaderboardEntry | null;
+  onDismiss?: () => void;
+}) {
   const confetti = useMemo(
     () =>
       Array.from({ length: 60 }).map((_, i) => ({
@@ -51,6 +57,15 @@ export function WinnerAnimation({ winner }: { winner: LeaderboardEntry | null })
             transition={{ type: "spring", stiffness: 200, damping: 16 }}
             className="glass relative z-10 flex flex-col items-center gap-4 px-12 py-10 text-center"
           >
+            {onDismiss && (
+              <button
+                onClick={onDismiss}
+                aria-label="Close"
+                className="absolute right-4 top-4 rounded-lg p-1.5 text-muted-foreground/70 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
             <motion.div
               animate={{ rotate: [0, -8, 8, 0] }}
               transition={{ duration: 1.4, repeat: Infinity, repeatDelay: 1 }}
@@ -70,6 +85,14 @@ export function WinnerAnimation({ winner }: { winner: LeaderboardEntry | null })
                 {winner.totalPoints} points · best reaction {winner.bestMs}ms
               </p>
             </div>
+            {onDismiss && (
+              <button
+                onClick={onDismiss}
+                className="btn-gradient mt-2 rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all"
+              >
+                Continue
+              </button>
+            )}
           </motion.div>
         </motion.div>
       )}

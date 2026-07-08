@@ -51,6 +51,15 @@ function toLeaderboard(room: RoomState): LeaderboardEntry[] {
   return entries;
 }
 
+/** Persists a single event log row. Never throws -- logging must never break gameplay. */
+async function logEvent(sessionId: string, level: "info" | "warn" | "error", message: string) {
+  try {
+    await prisma.eventLog.create({ data: { sessionId, level, message } });
+  } catch (e) {
+    console.warn("[db] could not persist event log:", (e as Error).message);
+  }
+}
+
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => handle(req, res));
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
@@ -80,6 +89,7 @@ app.prepare().then(() => {
         await prisma.gameSession.create({
           data: { id: session.id, code, hostId, status: "lobby", totalRounds: 5 },
         });
+        await logEvent(session.id, "info", `Session ${code} created`);
       } catch (e) {
         // DB optional in local/demo mode — game still runs fully in-memory.
         console.warn("[db] could not persist session (continuing in-memory):", (e as Error).message);
@@ -87,12 +97,24 @@ app.prepare().then(() => {
     });
 
     socket.on("session:join", async ({ code, name }) => {
-      const room = rooms.get(code);
-      if (!room) {
-        socket.emit("activity:log", `No session found for code ${code}`);
+      const trimmedName = (name ?? "").trim();
+      const trimmedCode = (code ?? "").trim().toUpperCase();
+
+      if (!trimmedCode || trimmedCode.length !== 6) {
+        socket.emit("activity:log", `Invalid session code format: "${trimmedCode}"`);
         return;
       }
-      currentCode = code;
+      if (!trimmedName || trimmedName.length < 2 || trimmedName.length > 24) {
+        socket.emit("activity:log", "Name must be between 2 and 24 characters.");
+        return;
+      }
+
+      const room = rooms.get(trimmedCode);
+      if (!room) {
+        socket.emit("activity:log", `No session found for code ${trimmedCode}`);
+        return;
+      }
+      currentCode = trimmedCode;
 
       // Idempotency guard: if this socket already has a player registered
       // in this room (e.g. the join page joined, then the game screen
@@ -100,7 +122,7 @@ app.prepare().then(() => {
       // existing player's state instead of creating a duplicate.
       const existingPlayerId = socket.data.playerId as string | undefined;
       if (existingPlayerId && room.players.has(existingPlayerId)) {
-        socket.join(code);
+        socket.join(trimmedCode);
         socket.emit("session:update", room.session);
         socket.emit("player:self", room.players.get(existingPlayerId)!);
         return;
@@ -108,18 +130,18 @@ app.prepare().then(() => {
 
       const player: Player = {
         id: uuid(),
-        name: name.slice(0, 24) || "Player",
+        name: trimmedName,
         joinedAt: Date.now(),
         connected: true,
         avatarIndex: room.players.size,
       };
       room.players.set(player.id, player);
       room.taps.set(player.id, []);
-      socket.join(code);
+      socket.join(trimmedCode);
       socket.data.playerId = player.id;
 
-      io.to(code).emit("players:update", Array.from(room.players.values()));
-      io.to(code).emit("activity:log", `${player.name} joined the session`);
+      io.to(trimmedCode).emit("players:update", Array.from(room.players.values()));
+      io.to(trimmedCode).emit("activity:log", `${player.name} joined the session`);
       socket.emit("session:update", room.session);
       socket.emit("player:self", player);
 
@@ -127,6 +149,7 @@ app.prepare().then(() => {
         await prisma.player.create({
           data: { id: player.id, sessionId: room.session.id, name: player.name, avatarIndex: player.avatarIndex },
         });
+        await logEvent(room.session.id, "info", `${player.name} joined session ${trimmedCode}`);
       } catch (e) {
         console.warn("[db] could not persist player:", (e as Error).message);
       }
@@ -186,6 +209,7 @@ app.prepare().then(() => {
         p.connected = false;
         io.to(currentCode).emit("players:update", Array.from(room.players.values()));
         io.to(currentCode).emit("activity:log", `${p.name} disconnected`);
+        logEvent(room.session.id, "warn", `${p.name} disconnected from session ${currentCode}`);
       }
     });
   });
@@ -200,6 +224,18 @@ app.prepare().then(() => {
     room.session.status = "countdown";
     io.to(code).emit("session:update", { ...room.session });
     io.to(code).emit("activity:log", `Round ${round} starting — get ready`);
+
+    if (round === 1) {
+      try {
+        await prisma.gameSession.update({
+          where: { id: room.session.id },
+          data: { status: "live", startedAt: new Date() },
+        });
+      } catch (e) {
+        console.warn("[db] could not persist session start:", (e as Error).message);
+      }
+      logEvent(room.session.id, "info", `Session ${code} started (${room.session.totalRounds} rounds)`);
+    }
 
     for (let s = 3; s > 0; s--) {
       io.to(code).emit("round:countdown", s);
@@ -230,6 +266,20 @@ app.prepare().then(() => {
       io.to(code).emit("leaderboard:update", leaderboard);
       if (leaderboard[0]) io.to(code).emit("game:winner", leaderboard[0]);
       io.to(code).emit("activity:log", "Session complete — analytics ready");
+
+      try {
+        await prisma.gameSession.update({
+          where: { id: room.session.id },
+          data: { status: "results", endedAt: new Date() },
+        });
+      } catch (e) {
+        console.warn("[db] could not persist session completion:", (e as Error).message);
+      }
+      await logEvent(
+        room.session.id,
+        "info",
+        `Session ${code} completed — winner ${leaderboard[0]?.name ?? "n/a"} (${leaderboard[0]?.totalPoints ?? 0} pts)`
+      );
       await persistAnalytics(room);
     }
   }

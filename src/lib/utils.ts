@@ -25,6 +25,26 @@ export function randomBetween(min: number, max: number): number {
   return Math.random() * (max - min) + min;
 }
 
+/** Formats a past Date as a short relative string, e.g. "2m ago", "just now". */
+export function timeAgo(date: Date | string): string {
+  const then = new Date(date).getTime();
+  const diffMs = Date.now() - then;
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 10) return "just now";
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
+/** Session codes only use this charset (see generateSessionCode) -- excludes ambiguous I/O/0/1. */
+export const SESSION_CODE_REGEX = /^[A-HJ-NP-Z2-9]{6}$/;
+/** Player display names: letters, numbers, spaces, and a few safe punctuation marks. */
+export const PLAYER_NAME_REGEX = /^[A-Za-z0-9 '_-]{2,24}$/;
+
 export const avatarPalette = [
   "from-violet-500 to-purple-600",
   "from-blue-500 to-indigo-600",

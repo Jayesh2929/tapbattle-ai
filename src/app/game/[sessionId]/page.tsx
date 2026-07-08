@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Home } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Countdown } from "@/components/game/Countdown";
 import { TapButton } from "@/components/game/TapButton";
 import { Leaderboard } from "@/components/game/Leaderboard";
@@ -15,6 +16,7 @@ import type { GameSession, LeaderboardEntry, Player, RoundResult, SessionStatus 
 export default function GameScreenPage() {
   const params = useParams<{ sessionId: string }>();
   const search = useSearchParams();
+  const router = useRouter();
   const code = params.sessionId.toUpperCase();
   const name = search.get("name") ?? "Player";
 
@@ -26,6 +28,7 @@ export default function GameScreenPage() {
   const [lastResult, setLastResult] = useState<{ reactionMs: number; falseStart: boolean } | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [winner, setWinner] = useState<LeaderboardEntry | null>(null);
+  const [winnerDismissed, setWinnerDismissed] = useState(false);
   const [hasTappedThisRound, setHasTappedThisRound] = useState(false);
 
   // A ref mirrors selfId so event handlers can read the latest value without
@@ -52,7 +55,10 @@ export default function GameScreenPage() {
       setStatus(s.status);
       setRound(s.round);
       setTotalRounds(s.totalRounds);
-      if (s.status === "countdown") setHasTappedThisRound(false);
+      if (s.status === "countdown") {
+        setHasTappedThisRound(false);
+        setWinnerDismissed(false);
+      }
       if (s.status !== "countdown" && s.status !== "waiting") setCountdown(null);
     };
     const onCountdown = (s: number) => setCountdown(s);
@@ -103,7 +109,7 @@ export default function GameScreenPage() {
 
   return (
     <main className="flex min-h-screen flex-col items-center px-6 py-10">
-      <WinnerAnimation winner={winner} />
+      <WinnerAnimation winner={winnerDismissed ? null : winner} onDismiss={() => setWinnerDismissed(true)} />
       <div className="mb-8 flex w-full max-w-2xl items-center justify-between">
         <Link href="/" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-white">
           <ArrowLeft className="h-4 w-4" /> Exit
@@ -130,7 +136,13 @@ export default function GameScreenPage() {
         )}
 
         {status === "results" && (
-          <p className="text-center text-muted-foreground">Session complete — check the analytics dashboard.</p>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <p className="text-muted-foreground">Session complete — nice work!</p>
+            <Button onClick={() => router.push("/")}>
+              <Home className="h-4 w-4" />
+              Back to home
+            </Button>
+          </div>
         )}
       </div>
 

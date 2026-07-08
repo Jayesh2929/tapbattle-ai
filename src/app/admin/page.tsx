@@ -1,65 +1,54 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Activity, Server, Users, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/analytics/StatCard";
 import { SessionsTable, type AdminSessionRow } from "@/components/admin/SessionsTable";
 import { EventLog, type AdminLogRow } from "@/components/admin/EventLog";
 import { PlayersDialog, type AdminPlayerRow } from "@/components/admin/PlayersDialog";
 
-/**
- * In production this page subscribes to a lightweight `admin` Socket.io
- * namespace broadcasting room snapshots from server/index.ts, and the
- * player roster below is read from the Player/Tap tables via Prisma. Here
- * it renders representative demo data so the dashboard -- including the
- * drill-down dialogs -- is fully navigable without a running multi-session
- * server.
- */
-const demoSessions: AdminSessionRow[] = [
-  { code: "TB7K2Q", host: "Arnav", players: 4, status: "live", startedAgo: "2m ago" },
-  { code: "TB9X3M", host: "Rushada", players: 2, status: "lobby", startedAgo: "just now" },
-  { code: "TB2P8L", host: "Aditya", players: 5, status: "results", startedAgo: "14m ago" },
-];
-
-const demoPlayers: AdminPlayerRow[] = [
-  { name: "Jayesh", sessionCode: "TB7K2Q", avgMs: 238, roundsPlayed: 3, joinedAgo: "2m ago", status: "connected" },
-  { name: "Meera", sessionCode: "TB7K2Q", avgMs: 271, roundsPlayed: 3, joinedAgo: "2m ago", status: "connected" },
-  { name: "Karan", sessionCode: "TB7K2Q", avgMs: 305, roundsPlayed: 2, joinedAgo: "2m ago", status: "connected" },
-  { name: "Diya", sessionCode: "TB7K2Q", avgMs: 260, roundsPlayed: 3, joinedAgo: "2m ago", status: "connected" },
-  { name: "Rohan", sessionCode: "TB9X3M", avgMs: 0, roundsPlayed: 0, joinedAgo: "just now", status: "connected" },
-  { name: "Simran", sessionCode: "TB9X3M", avgMs: 0, roundsPlayed: 0, joinedAgo: "just now", status: "connected" },
-  { name: "Arnav", sessionCode: "TB2P8L", avgMs: 215, roundsPlayed: 5, joinedAgo: "14m ago", status: "disconnected" },
-  { name: "Aditya", sessionCode: "TB2P8L", avgMs: 249, roundsPlayed: 5, joinedAgo: "14m ago", status: "disconnected" },
-  { name: "Rushada", sessionCode: "TB2P8L", avgMs: 233, roundsPlayed: 5, joinedAgo: "14m ago", status: "disconnected" },
-  { name: "Vikram", sessionCode: "TB2P8L", avgMs: 288, roundsPlayed: 5, joinedAgo: "14m ago", status: "disconnected" },
-  { name: "Priya", sessionCode: "TB2P8L", avgMs: 301, roundsPlayed: 4, joinedAgo: "14m ago", status: "disconnected" },
-];
-
-const initialLogs: AdminLogRow[] = [
-  { level: "info", message: "Session TB7K2Q started round 3 of 5", time: "14:22:10" },
-  { level: "info", message: "Player 'Jayesh' joined TB9X3M", time: "14:21:58" },
-  { level: "warn", message: "High latency (312ms) on socket #a91f for session TB2P8L", time: "14:20:41" },
-  { level: "info", message: "Session TB2P8L completed -- analytics persisted", time: "14:08:02" },
-  { level: "error", message: "Prisma write retried for TB2P8L analytics snapshot", time: "14:08:01" },
-];
+const POLL_INTERVAL_MS = 4000;
 
 export default function AdminDashboardPage() {
+  const [sessions, setSessions] = useState<AdminSessionRow[]>([]);
+  const [players, setPlayers] = useState<AdminPlayerRow[]>([]);
+  const [logs, setLogs] = useState<AdminLogRow[]>([]);
   const [latency, setLatency] = useState(48);
-  const [logs] = useState(initialLogs);
+  const [loading, setLoading] = useState(true);
+  const [isLive, setIsLive] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
   const [playersDialogOpen, setPlayersDialogOpen] = useState(false);
   const [sessionFilter, setSessionFilter] = useState<string | null>(null);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLatency(() => Math.round(35 + Math.random() * 40));
-    }, 2500);
-    return () => clearInterval(interval);
+  const fetchOverview = useCallback(async () => {
+    const start = performance.now();
+    try {
+      const res = await fetch("/api/admin/overview").then((r) => r.json());
+      setSessions(res.sessions ?? []);
+      setPlayers(res.players ?? []);
+      setLogs(res.logs ?? []);
+      setIsLive(res.live ?? false);
+      setDbError(res.error ?? null);
+      setLatency(Math.round(performance.now() - start));
+    } catch {
+      setDbError("Could not reach the admin API.");
+      setIsLive(false);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const totalPlayers = demoSessions.reduce((a, s) => a + s.players, 0);
-  const liveSessions = demoSessions.filter((s) => s.status === "live").length;
+  useEffect(() => {
+    fetchOverview();
+    const interval = setInterval(fetchOverview, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchOverview]);
+
+  const totalPlayers = players.length;
+  const liveSessionsCount = sessions.filter((s) => s.status === "live").length;
 
   function openAllPlayers() {
     setSessionFilter(null);
@@ -78,7 +67,9 @@ export default function AdminDashboardPage() {
           <Link href="/" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-white">
             <ArrowLeft className="h-4 w-4" /> Back
           </Link>
-          <Badge variant="success">All systems operational</Badge>
+          <Badge variant={isLive ? "success" : "warning"}>
+            {isLive ? "All systems operational" : "Showing demo data — database unreachable"}
+          </Badge>
         </div>
 
         <div className="mb-10 flex items-center gap-3">
@@ -87,44 +78,79 @@ export default function AdminDashboardPage() {
           </span>
           <div>
             <h1 className="font-display text-2xl font-semibold tracking-tight">Admin dashboard</h1>
-            <p className="text-sm text-muted-foreground">Server health &amp; session oversight</p>
+            <p className="text-sm text-muted-foreground">
+              {isLive
+                ? `Live data from every session played — refreshes every ${POLL_INTERVAL_MS / 1000}s`
+                : "Server health & session oversight"}
+            </p>
           </div>
         </div>
 
-        <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <StatCard icon={Zap} label="Active sessions" value={String(demoSessions.length)} sublabel={`${liveSessions} in progress`} />
-          <button onClick={openAllPlayers} className="text-left transition-transform hover:-translate-y-0.5">
+        {dbError && (
+          <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
+            {dbError} Sessions still run fine in-memory, but history won&apos;t appear here until the database is reachable.
+          </div>
+        )}
+
+        {loading ? (
+          <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-24" />
+            ))}
+          </div>
+        ) : (
+          <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <StatCard icon={Zap} label="Active sessions" value={String(sessions.length)} sublabel={`${liveSessionsCount} in progress`} />
+            <button onClick={openAllPlayers} className="text-left transition-transform hover:-translate-y-0.5">
+              <StatCard
+                icon={Users}
+                label="Connected players"
+                value={String(totalPlayers)}
+                sublabel="Click to view all players"
+                delay={0.05}
+                tone="success"
+              />
+            </button>
             <StatCard
-              icon={Users}
-              label="Connected players"
-              value={String(totalPlayers)}
-              sublabel="Click to view all players"
-              delay={0.05}
-              tone="success"
+              icon={Activity}
+              label="Average latency"
+              value={`${latency}ms`}
+              sublabel="Admin API round-trip"
+              delay={0.1}
+              tone={latency > 400 ? "warning" : "default"}
             />
-          </button>
-          <StatCard
-            icon={Activity}
-            label="Average latency"
-            value={`${latency}ms`}
-            sublabel="Round-trip socket ping"
-            delay={0.1}
-            tone={latency > 70 ? "warning" : "default"}
-          />
-          <StatCard icon={Server} label="Server status" value="Healthy" sublabel="Node + Socket.io + PostgreSQL" delay={0.15} tone="success" />
-        </div>
+            <StatCard
+              icon={Server}
+              label="Server status"
+              value={isLive ? "Healthy" : "Degraded"}
+              sublabel="Node + Socket.io + PostgreSQL"
+              delay={0.15}
+              tone={isLive ? "success" : "warning"}
+            />
+          </div>
+        )}
 
         <div className="mb-6">
-          <SessionsTable sessions={demoSessions} onRowClick={openSessionPlayers} />
+          {loading ? (
+            <Skeleton className="h-64" />
+          ) : sessions.length === 0 ? (
+            <div className="glass flex flex-col items-center gap-2 px-6 py-12 text-center">
+              <p className="text-sm text-muted-foreground">
+                No sessions yet — host a game to see it appear here in real time.
+              </p>
+            </div>
+          ) : (
+            <SessionsTable sessions={sessions} onRowClick={openSessionPlayers} />
+          )}
         </div>
 
-        <EventLog logs={logs} />
+        {loading ? <Skeleton className="h-64" /> : <EventLog logs={logs} />}
       </div>
 
       <PlayersDialog
         open={playersDialogOpen}
         onOpenChange={setPlayersDialogOpen}
-        players={demoPlayers}
+        players={players}
         sessionFilter={sessionFilter}
       />
     </main>

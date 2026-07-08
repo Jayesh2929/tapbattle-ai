@@ -22,20 +22,24 @@ export default function HostDashboardPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [winner, setWinner] = useState<LeaderboardEntry | null>(null);
+  const [winnerDismissed, setWinnerDismissed] = useState(false);
   const hostId = useMemo(() => uuid(), []);
 
   useEffect(() => {
     const socket = getSocket();
     socket.emit("session:create", hostId);
 
-    socket.on("session:update", setSession);
+    socket.on("session:update", (s) => {
+      setSession(s);
+      if (s.status === "lobby" || s.status === "countdown") setWinnerDismissed(false);
+    });
     socket.on("players:update", setPlayers);
     socket.on("leaderboard:update", setLeaderboard);
     socket.on("activity:log", (msg) => setLogs((l) => [...l, msg]));
     socket.on("game:winner", (w) => setWinner(w));
 
     return () => {
-      socket.off("session:update", setSession);
+      socket.off("session:update");
       socket.off("players:update", setPlayers);
       socket.off("leaderboard:update", setLeaderboard);
       socket.off("activity:log");
@@ -59,7 +63,7 @@ export default function HostDashboardPage() {
 
   return (
     <main className="min-h-screen px-6 py-10">
-      <WinnerAnimation winner={winner} />
+      <WinnerAnimation winner={winnerDismissed ? null : winner} onDismiss={() => setWinnerDismissed(true)} />
       <div className="mx-auto max-w-6xl">
         <div className="mb-8 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-white">
