@@ -1,0 +1,96 @@
+// TapBattle AI — Prisma schema
+// Models the core entities from the paper: sessions, players, per-round taps,
+// and derived analytics snapshots persisted after each session ends.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model GameSession {
+  id           String    @id @default(uuid())
+  code         String    @unique
+  hostId       String
+  status       String    @default("lobby") // lobby | countdown | waiting | live | results | closed
+  totalRounds  Int       @default(5)
+  createdAt    DateTime  @default(now())
+  startedAt    DateTime?
+  endedAt      DateTime?
+
+  players      Player[]
+  taps         Tap[]
+  analytics    PlayerAnalyticsSnapshot[]
+  eventLogs    EventLog[]
+
+  @@index([code])
+}
+
+model Player {
+  id         String      @id @default(uuid())
+  session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId  String
+  name       String
+  avatarIndex Int        @default(0)
+  joinedAt   DateTime    @default(now())
+
+  taps       Tap[]
+  analytics  PlayerAnalyticsSnapshot[]
+
+  @@index([sessionId])
+}
+
+model Tap {
+  id          String      @id @default(uuid())
+  session     GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId   String
+  player      Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId    String
+  round       Int
+  reactionMs  Float
+  falseStart  Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+
+  @@index([sessionId, playerId])
+}
+
+/// Snapshot of AI-computed analytics for one player at the end of a session.
+model PlayerAnalyticsSnapshot {
+  id                String      @id @default(uuid())
+  session           GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId         String
+  player            Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId          String
+
+  averageMs         Float
+  fastestMs         Float
+  slowestMs         Float
+  stdDevMs          Float
+  consistencyScore  Int
+  accuracy          Int
+  bestStreak        Int
+  fatigueDetected   Boolean
+  fatigueSeverity   String
+  trendDirection    String
+  trendSlope        Float
+  classification    String
+  suggestions       String[]
+
+  createdAt         DateTime    @default(now())
+
+  @@index([sessionId, playerId])
+}
+
+model EventLog {
+  id        String      @id @default(uuid())
+  session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  level     String      @default("info") // info | warn | error
+  message   String
+  createdAt DateTime    @default(now())
+
+  @@index([sessionId])
+}
